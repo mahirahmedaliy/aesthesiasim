@@ -28,6 +28,7 @@ import {
   toggleUserProStatus,
   getWhopConfig,
   saveWhopConfig,
+  fetchWhopConfigFromSupabase,
   WhopConfig,
   verifyAdminPasscode,
   saveAdminPasscode,
@@ -102,7 +103,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     setLoading(true);
     const list = await getAllUsersList();
     setUsers(list);
-    setWhopConfigState(getWhopConfig());
+    const remoteWhop = await fetchWhopConfigFromSupabase();
+    setWhopConfigState(remoteWhop || getWhopConfig());
     setLoading(false);
   };
 
@@ -165,9 +167,9 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     }
   };
 
-  const handleSaveWhopConfig = (e: React.FormEvent) => {
+  const handleSaveWhopConfig = async (e: React.FormEvent) => {
     e.preventDefault();
-    saveWhopConfig(whopConfig);
+    await saveWhopConfig(whopConfig);
     setSaveNotice(true);
     setTimeout(() => setSaveNotice(false), 2000);
   };

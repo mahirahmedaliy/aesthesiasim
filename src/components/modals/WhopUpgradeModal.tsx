@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Sparkles,
   Lock,
@@ -14,7 +14,13 @@ import {
   Award,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { getWhopConfig, activateProWithToken, UserAccount } from '../../lib/authService';
+import {
+  getWhopConfig,
+  fetchWhopConfigFromSupabase,
+  activateProWithToken,
+  UserAccount,
+  WhopConfig,
+} from '../../lib/authService';
 
 interface WhopUpgradeModalProps {
   isOpen: boolean;
@@ -33,14 +39,18 @@ export const WhopUpgradeModal: React.FC<WhopUpgradeModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [whopConfig, setWhopConfig] = useState<WhopConfig>(() => getWhopConfig());
+
+  useEffect(() => {
+    if (isOpen) {
+      setWhopConfig(getWhopConfig());
+      fetchWhopConfigFromSupabase().then((cfg) => {
+        if (cfg) setWhopConfig(cfg);
+      });
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
-
-  const whopConfig = getWhopConfig();
-
-  const handleOpenWhopCheckout = () => {
-    window.open(whopConfig.checkoutUrl, '_blank', 'noopener,noreferrer');
-  };
 
   const handleActivateToken = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -129,16 +139,18 @@ export const WhopUpgradeModal: React.FC<WhopUpgradeModalProps> = ({
             ))}
           </div>
 
-          {/* Whop Gateway Checkout Button */}
+          {/* Whop Gateway Checkout Button (Direct Anchor Link) */}
           <div className="pt-2">
-            <button
-              onClick={handleOpenWhopCheckout}
-              className="w-full py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-mono font-black text-sm shadow-xl shadow-amber-500/20 flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer"
+            <a
+              href={whopConfig.checkoutUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-mono font-black text-sm shadow-xl shadow-amber-500/20 flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer text-center"
             >
               <CreditCard className="w-4 h-4" />
               <span>Unlock on Whop (${whopConfig.priceUsd.toFixed(2)} USD)</span>
               <ExternalLink className="w-3.5 h-3.5 opacity-70" />
-            </button>
+            </a>
             <p className="text-[10px] text-center text-slate-400 mt-1.5 font-mono">
               Secure checkout powered by Whop • Instant access upon completion
             </p>

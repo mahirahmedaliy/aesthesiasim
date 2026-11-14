@@ -81,16 +81,26 @@ create table if not exists public.action_logs (
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- 7. Enable Row Level Security (RLS)
+-- 7. App Settings Table (Global Whop Link, Price, etc.)
+create table if not exists public.app_settings (
+  key text primary key,
+  value jsonb not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- 8. Enable Row Level Security (RLS)
 alter table public.profiles enable row level security;
 alter table public.case_completions enable row level security;
 alter table public.patients enable row level security;
 alter table public.case_sessions enable row level security;
 alter table public.action_logs enable row level security;
+alter table public.app_settings enable row level security;
 
--- 8. Policies for Application Access
+-- 9. Policies for Application Access
 create policy "Allow all access to profiles" on public.profiles for all using (true) with check (true);
 create policy "Allow all access to case_completions" on public.case_completions for all using (true) with check (true);
 create policy "Allow public read to patients" on public.patients for select using (true);
 create policy "Allow public all to sessions" on public.case_sessions for all using (true) with check (true);
 create policy "Allow public all to action_logs" on public.action_logs for all using (true) with check (true);
+create policy "Allow public read to app_settings" on public.app_settings for select using (true);
+create policy "Allow all to app_settings" on public.app_settings for all using (true) with check (true);

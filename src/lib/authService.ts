@@ -117,11 +117,50 @@ export function getWhopConfig(): WhopConfig {
   return DEFAULT_WHOP_CONFIG;
 }
 
-export function saveWhopConfig(config: Partial<WhopConfig>) {
-  if (typeof window === 'undefined') return;
+export async function fetchWhopConfigFromSupabase(): Promise<WhopConfig | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+  try {
+    const { data, error } = await client
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'whop_config')
+      .maybeSingle();
+    if (!error && data?.value) {
+      const merged: WhopConfig = { ...DEFAULT_WHOP_CONFIG, ...data.value };
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(STORAGE_KEY_WHOP_CONFIG, JSON.stringify(merged));
+      }
+      return merged;
+    }
+  } catch (e) {
+    console.warn('Failed to load Whop config from Supabase:', e);
+  }
+  return null;
+}
+
+export async function saveWhopConfig(config: Partial<WhopConfig>): Promise<WhopConfig> {
   const current = getWhopConfig();
   const updated = { ...current, ...config };
-  localStorage.setItem(STORAGE_KEY_WHOP_CONFIG, JSON.stringify(updated));
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(STORAGE_KEY_WHOP_CONFIG, JSON.stringify(updated));
+  }
+
+  // Sync to Supabase so it persists globally across all devices & visitors
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      await client.from('app_settings').upsert({
+        key: 'whop_config',
+        value: updated,
+        updated_at: new Date().toISOString(),
+      });
+    } catch (e) {
+      console.warn('Failed to sync Whop config to Supabase:', e);
+    }
+  }
+
+  return updated;
 }
 
 // ==========================================
