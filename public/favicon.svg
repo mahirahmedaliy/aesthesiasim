@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <rect width="64" height="64" rx="14" fill="#020617"/>
+  <rect x="2" y="2" width="60" height="60" rx="12" stroke="#0ea5e9" stroke-width="2" stroke-opacity="0.5"/>
+  <!-- Glowing ECG Waveform -->
+  <path d="M6 32h12l3-7 5 18 6-27 5 20 4-8 4 4h13" stroke="#38bdf8" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Pulse Dot -->
+  <circle cx="58" cy="32" r="2.5" fill="#10b981"/>
+</svg>
