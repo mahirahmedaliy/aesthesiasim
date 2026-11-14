@@ -96,7 +96,7 @@ export async function saveAdminPasscode(newPasscode: string): Promise<boolean> {
 }
 
 const DEFAULT_WHOP_CONFIG: WhopConfig = {
-  checkoutUrl: 'https://whop.com/checkout/aesthesiasim-pro/',
+  checkoutUrl: 'https://whop.com/checkout/plan_pBwQ4fNKDkO87',
   priceUsd: 24.29,
   secretActivationTokens: [],
 };
@@ -109,7 +109,13 @@ export function getWhopConfig(): WhopConfig {
   try {
     const stored = localStorage.getItem(STORAGE_KEY_WHOP_CONFIG);
     if (stored) {
-      return { ...DEFAULT_WHOP_CONFIG, ...JSON.parse(stored) };
+      const parsed = JSON.parse(stored);
+      // Auto-migrate away from any old dummy placeholder URL
+      if (parsed.checkoutUrl && parsed.checkoutUrl.includes('aesthesiasim-pro')) {
+        parsed.checkoutUrl = DEFAULT_WHOP_CONFIG.checkoutUrl;
+        localStorage.setItem(STORAGE_KEY_WHOP_CONFIG, JSON.stringify({ ...DEFAULT_WHOP_CONFIG, ...parsed }));
+      }
+      return { ...DEFAULT_WHOP_CONFIG, ...parsed };
     }
   } catch (e) {
     console.warn('Failed to parse Whop config:', e);
