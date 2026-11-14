@@ -17,12 +17,17 @@ import {
   KeyRound,
   LogOut,
   LogIn,
+  Stethoscope,
+  Cpu,
+  Award,
+  Zap,
 } from 'lucide-react';
 import {
   UserAccount,
   CaseCompletionRecord,
   isCaseUnlocked,
 } from '../../lib/authService';
+import { AppFooter } from '../common/AppFooter';
 
 interface CaseSelectionLobbyProps {
   cases: ClinicalCase[];
@@ -64,7 +69,7 @@ export const CaseSelectionLobby: React.FC<CaseSelectionLobbyProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[#030712] text-slate-100 flex flex-col font-sans select-none">
+    <div id="top" className="min-h-screen bg-[#030712] text-slate-100 flex flex-col font-sans select-none">
       
       {/* Top Header Bar */}
       <header className="bg-slate-950/90 backdrop-blur-md border-b border-slate-800 px-4 sm:px-6 py-3.5 flex items-center justify-between sticky top-0 z-30">
@@ -188,8 +193,8 @@ export const CaseSelectionLobby: React.FC<CaseSelectionLobbyProps> = ({
           )}
         </div>
 
-        {/* 6 Patient Case Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        {/* 7 Patient Case Cards Grid */}
+        <div id="cases-section" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 scroll-mt-20">
           {cases.map((c, index) => {
             const p = c.patient;
             const completion = userProgress[p.id];
@@ -368,15 +373,106 @@ export const CaseSelectionLobby: React.FC<CaseSelectionLobbyProps> = ({
             );
           })}
         </div>
+
+        {/* HOW IT WORKS SECTION */}
+        <section id="how-it-works" className="pt-8 border-t border-slate-800/80 space-y-6 scroll-mt-20">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
+            <div>
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-sky-950/80 border border-sky-800 text-sky-400 text-xs font-mono font-bold uppercase mb-2">
+                <Stethoscope className="w-3.5 h-3.5" />
+                <span>Simulation Workflow</span>
+              </div>
+              <h3 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                How It Works — From Induction to Extubation
+              </h3>
+            </div>
+            <p className="text-xs text-slate-400 font-mono">
+              6-Phase Perioperative Management Loop
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800 space-y-2">
+              <div className="flex items-center justify-between text-xs font-mono font-bold">
+                <span className="text-sky-400">PHASE 01</span>
+                <span className="text-slate-500">PRE-OP</span>
+              </div>
+              <h4 className="font-bold text-white text-sm">Assessment & Leak Test</h4>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Review airway Mallampati score, NPO fasting compliance, baseline labs, and perform the automated workstation leak test.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800 space-y-2">
+              <div className="flex items-center justify-between text-xs font-mono font-bold">
+                <span className="text-indigo-400">PHASE 02</span>
+                <span className="text-slate-500">INDUCTION</span>
+              </div>
+              <h4 className="font-bold text-white text-sm">Blunted Induction & Airway</h4>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Pre-oxygenate to 100% FiO2, titrate IV hypnotics and opioids, secure the trachea, verify bilateral breath sounds and square-wave EtCO2.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800 space-y-2">
+              <div className="flex items-center justify-between text-xs font-mono font-bold">
+                <span className="text-amber-400">PHASE 03</span>
+                <span className="text-slate-500">MAINTENANCE</span>
+              </div>
+              <h4 className="font-bold text-white text-sm">Workstation & Crisis Control</h4>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Maintain 0.8–1.0 MAC, adjust lung-protective ventilation, manage pneumoperitoneum, blood loss, and treat real-time physiological complications.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800 space-y-2">
+              <div className="flex items-center justify-between text-xs font-mono font-bold">
+                <span className="text-emerald-400">PHASE 04</span>
+                <span className="text-slate-500">EMERGENCE</span>
+              </div>
+              <h4 className="font-bold text-white text-sm">Reversal & PACU Handover</h4>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Reverse neuromuscular blockade (TOF &ge; 0.9), extubate on spontaneous ventilation, transfer to recovery, and review an unsparing debrief scorecard.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* ABOUT SECTION */}
+        <section id="about-section" className="pt-6 pb-4 border-t border-slate-800/80 scroll-mt-20">
+          <div className="p-6 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 border border-slate-800 space-y-4">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-sky-500/20 border border-sky-500/40 flex items-center justify-center text-sky-400">
+                <Cpu className="w-4 h-4" />
+              </div>
+              <h3 className="text-lg font-black text-white tracking-tight">
+                About Aesthesiasim
+              </h3>
+            </div>
+            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+              Aesthesiasim is an advanced intraoperative clinical workstation built for anesthesia residents, CRNAs, medical students, and attending physicians. Unlike simple question banks or preset state jump simulators, Aesthesiasim computes multi-compartment pharmacokinetics, positive feedback cardiovascular collapse, continuous respiratory gas exchange, and real-time multi-lead ECG rhythm generation on every single clock tick.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 text-xs font-mono text-slate-400">
+              <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/80">
+                <span className="text-sky-400 font-bold block mb-1">Zero Artificial Floors</span>
+                Vitals do not clamp at arbitrary minimums. Untreated severe hypotension or hypoxia triggers true cardiac arrest and death.
+              </div>
+              <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/80">
+                <span className="text-emerald-400 font-bold block mb-1">Dose-Dependent PK/PD</span>
+                Drug effects scale with mg/kg, onset, peak, and duration. Overdosing or drug stacking produces real toxicological collapse.
+              </div>
+              <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/80">
+                <span className="text-purple-400 font-bold block mb-1">Rigorous Clinical Scoring</span>
+                100-point rubric assessing airway blunting, drug selections, ventilator settings, and crisis decision timing.
+              </div>
+            </div>
+          </div>
+        </section>
+
       </main>
 
-      {/* Persistent Bottom Footer */}
-      <footer className="bg-slate-950 border-t border-slate-800 px-6 py-2.5 flex items-center justify-between text-[11px] font-mono text-slate-500">
-        <span>Aesthesiasim — Advanced Clinical Anesthesia Simulator</span>
-        <span className="text-amber-500/80 font-bold">
-          ⚠️ For educational simulation only, not for clinical decision-making.
-        </span>
-      </footer>
+      {/* Professional Responsive Footer */}
+      <AppFooter />
 
     </div>
   );

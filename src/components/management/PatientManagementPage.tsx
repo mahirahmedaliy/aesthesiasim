@@ -39,6 +39,7 @@ import {
 import { audioEngine } from '../../utils/audioEngine';
 import { logSessionToSupabase } from '../../lib/supabase';
 import { saveCaseCompletion } from '../../lib/authService';
+import { AppFooter } from '../common/AppFooter';
 
 interface PatientManagementPageProps {
   clinicalCase: ClinicalCase;
@@ -2078,6 +2079,12 @@ export const PatientManagementPage: React.FC<PatientManagementPageProps> = ({
           }}
         />
       </div>
+
+      {/* Professional Responsive Footer */}
+      <AppFooter
+        onNavigateHome={handleBackToLobby}
+        onNavigateCases={handleBackToLobby}
+      />
 
       {/* Modals */}
       <HintModal
