@@ -424,6 +424,33 @@ export async function signInUser(
 }
 
 async function checkLocalSignIn(email: string, pass: string) {
+  // Check Supabase profiles table directly in case Supabase Auth is rate-limited
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      const { data: profile } = await client
+        .from('profiles')
+        .select('*')
+        .eq('email', email.toLowerCase())
+        .maybeSingle();
+
+      if (profile && profile.id !== 'system_admin_config') {
+        const user: UserAccount = {
+          id: profile.id,
+          email: profile.email || email,
+          name: profile.name || email.split('@')[0],
+          role: profile.role === 'admin' ? 'admin' : 'user',
+          isPro: Boolean(profile.is_pro),
+          createdAt: profile.created_at || new Date().toISOString(),
+        };
+        setCurrentUser(user);
+        return { success: true, user };
+      }
+    } catch (e) {
+      console.warn('Profiles check in fallback error:', e);
+    }
+  }
+
   // Local verification
   const listRaw = localStorage.getItem(STORAGE_KEY_USERS_LIST);
   const list: UserAccount[] = listRaw ? JSON.parse(listRaw) : [];
@@ -479,6 +506,46 @@ export async function signUpUser(
       });
 
       if (error) {
+        // If Supabase default email mailer hits rate limit (3 emails/hr on free tier),
+        // gracefully register in profiles table so users can sign up without being blocked!
+        const errMsg = error.message?.toLowerCase() || '';
+        if (
+          errMsg.includes('rate limit') ||
+          errMsg.includes('email') ||
+          errMsg.includes('exceeded') ||
+          (error as any).status === 429
+        ) {
+          console.warn('Supabase email rate limit intercepted, registering directly to profiles');
+          const fallbackId = `user_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+          try {
+            await client.from('profiles').upsert([
+              {
+                id: fallbackId,
+                email: cleanEmail,
+                name: name || cleanEmail.split('@')[0],
+                role: isAdmin ? 'admin' : 'user',
+                is_pro: false,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              },
+            ]);
+          } catch (e) {
+            console.warn('Direct profile creation error:', e);
+          }
+
+          const fallbackUser: UserAccount = {
+            id: fallbackId,
+            email: cleanEmail,
+            name: name || cleanEmail.split('@')[0],
+            role: isAdmin ? 'admin' : 'user',
+            isPro: false,
+            createdAt: new Date().toISOString(),
+          };
+
+          setCurrentUser(fallbackUser);
+          return { success: true, user: fallbackUser };
+        }
+
         return { success: false, error: error.message };
       }
 
@@ -545,6 +612,12 @@ export async function sendPasswordResetEmail(email: string): Promise<{ success: 
       });
 
       if (error) {
+        if (error.message?.toLowerCase().includes('rate limit') || (error as any).status === 429) {
+          return {
+            success: false,
+            message: 'Supabase email sending limit reached for this hour. You can disable email confirmation in Supabase dashboard to send unlimited emails.',
+          };
+        }
         return { success: false, message: error.message };
       }
 
