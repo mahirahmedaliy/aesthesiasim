@@ -37,7 +37,7 @@ interface CaseSelectionLobbyProps {
   onOpenAuthModal: () => void;
   onSignOut: () => void;
   onOpenWhopUpgrade: (caseName?: string) => void;
-  onOpenAdminDashboard: () => void;
+  onOpenAdminDashboard?: () => void;
   onOpenCaseReview: (record: CaseCompletionRecord) => void;
   userProgress: Record<string, CaseCompletionRecord>;
 }
@@ -119,17 +119,6 @@ export const CaseSelectionLobby: React.FC<CaseSelectionLobbyProps> = ({
                 <span className="max-w-[120px] truncate font-bold">{currentUser.name}</span>
               </div>
 
-              {currentUser.role === 'admin' && (
-                <button
-                  onClick={onOpenAdminDashboard}
-                  className="px-2 py-1 rounded-lg bg-amber-950 text-amber-300 border border-amber-700/60 font-bold hover:bg-amber-900 transition-colors flex items-center gap-1 cursor-pointer"
-                  title="Open Admin Portal"
-                >
-                  <Shield className="w-3 h-3 text-amber-400" />
-                  <span>Admin</span>
-                </button>
-              )}
-
               <button
                 onClick={onSignOut}
                 className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
@@ -146,14 +135,6 @@ export const CaseSelectionLobby: React.FC<CaseSelectionLobbyProps> = ({
               >
                 <LogIn className="w-3.5 h-3.5 text-sky-400" />
                 <span>Sign In</span>
-              </button>
-
-              <button
-                onClick={onOpenAdminDashboard}
-                className="p-1.5 rounded-xl bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
-                title="Admin Access Portal"
-              >
-                <KeyRound className="w-4 h-4 text-amber-400" />
               </button>
             </div>
           )}

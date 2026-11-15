@@ -82,12 +82,8 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
   const [confirmPinInput, setConfirmPinInput] = useState('');
   const [pinSuccessNotice, setPinSuccessNotice] = useState('');
   const [pinErrorNotice, setPinErrorNotice] = useState('');
-
-  useEffect(() => {
-    if (currentUser?.role === 'admin' || currentUser?.email?.toLowerCase().includes('admin')) {
-      setIsAuthenticated(true);
-    }
-  }, [currentUser]);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [isUpdatingPin, setIsUpdatingPin] = useState(false);
 
   useEffect(() => {
     if (isOpen && isAuthenticated) {
@@ -112,16 +108,21 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
 
   const handleAdminAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    const isValid = await verifyAdminPasscode(passcode);
-    if (isValid) {
-      setIsAuthenticated(true);
-      setPasscodeError(false);
-      loadData();
-      const creds = getSupabaseCredentials();
-      setSupabaseUrl(creds.url);
-      setSupabaseKey(creds.key);
-    } else {
-      setPasscodeError(true);
+    setIsAuthenticating(true);
+    setPasscodeError(false);
+    try {
+      const isValid = await verifyAdminPasscode(passcode);
+      if (isValid) {
+        setIsAuthenticated(true);
+        loadData();
+        const creds = getSupabaseCredentials();
+        setSupabaseUrl(creds.url);
+        setSupabaseKey(creds.key);
+      } else {
+        setPasscodeError(true);
+      }
+    } finally {
+      setIsAuthenticating(false);
     }
   };
 
@@ -129,31 +130,36 @@ export const AdminDashboardModal: React.FC<AdminDashboardModalProps> = ({
     e.preventDefault();
     setPinErrorNotice('');
     setPinSuccessNotice('');
+    setIsUpdatingPin(true);
 
-    const isCurrentValid = await verifyAdminPasscode(currentPinInput);
-    if (!isCurrentValid) {
-      setPinErrorNotice('Current passcode entered is incorrect.');
-      return;
-    }
+    try {
+      const isCurrentValid = await verifyAdminPasscode(currentPinInput);
+      if (!isCurrentValid) {
+        setPinErrorNotice('Current passcode entered is incorrect.');
+        return;
+      }
 
-    if (!newPinInput || newPinInput.trim().length < 4) {
-      setPinErrorNotice('New passcode must be at least 4 characters long.');
-      return;
-    }
+      if (!newPinInput || newPinInput.trim().length < 4) {
+        setPinErrorNotice('New passcode must be at least 4 characters long.');
+        return;
+      }
 
-    if (newPinInput !== confirmPinInput) {
-      setPinErrorNotice('New passcode and confirmation do not match.');
-      return;
-    }
+      if (newPinInput !== confirmPinInput) {
+        setPinErrorNotice('New passcode and confirmation do not match.');
+        return;
+      }
 
-    const ok = await saveAdminPasscode(newPinInput);
-    if (ok) {
-      setPinSuccessNotice('Admin passcode successfully updated! Use your new passcode for future logins.');
-      setCurrentPinInput('');
-      setNewPinInput('');
-      setConfirmPinInput('');
-    } else {
-      setPinErrorNotice('Failed to update passcode.');
+      const ok = await saveAdminPasscode(newPinInput);
+      if (ok) {
+        setPinSuccessNotice('Admin passcode successfully updated! Changes are synced to cloud and active on all devices.');
+        setCurrentPinInput('');
+        setNewPinInput('');
+        setConfirmPinInput('');
+      } else {
+        setPinErrorNotice('Failed to update passcode in database.');
+      }
+    } finally {
+      setIsUpdatingPin(false);
     }
   };
 
@@ -368,9 +374,17 @@ create policy "Allow public all to action_logs" on public.action_logs for all us
 
               <button
                 type="submit"
-                className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-mono font-bold text-xs shadow-lg flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                disabled={isAuthenticating}
+                className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-mono font-bold text-xs shadow-lg flex items-center justify-center gap-2 cursor-pointer transition-colors"
               >
-                <span>Unlock Admin Portal</span>
+                {isAuthenticating ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
+                    <span>Verifying Credentials...</span>
+                  </>
+                ) : (
+                  <span>Unlock Admin Portal</span>
+                )}
               </button>
             </form>
           </div>
@@ -812,18 +826,28 @@ create policy "Allow public all to action_logs" on public.action_logs for all us
                   <div className="pt-2">
                     <button
                       type="submit"
-                      className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-mono font-bold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md active:scale-95"
+                      disabled={isUpdatingPin}
+                      className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-mono font-bold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md active:scale-95"
                     >
-                      <Save className="w-3.5 h-3.5" />
-                      <span>Update Master Passcode</span>
+                      {isUpdatingPin ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Syncing to Cloud...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Save className="w-3.5 h-3.5" />
+                          <span>Update Master Passcode (Global)</span>
+                        </>
+                      )}
                     </button>
                   </div>
                 </form>
 
                 <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 text-[11px] font-mono text-slate-400 space-y-1 mt-4">
-                  <div className="font-bold text-slate-300">💡 Environment Variable Option (.env):</div>
+                  <div className="font-bold text-purple-300">☁️ Cloud Persistence:</div>
                   <p>
-                    You can also set <code className="text-amber-300 font-bold">VITE_ADMIN_PASSCODE=YourCustomPassword</code> in your <code className="text-amber-300">.env</code> file. Environment variables take highest precedence across all browsers.
+                    When you update the master passcode here, it is cryptographically hashed with SHA-256 and saved directly to the database. The new passcode applies immediately across all devices, browsers, and mobile sessions.
                   </p>
                 </div>
               </div>

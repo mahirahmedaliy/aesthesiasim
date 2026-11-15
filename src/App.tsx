@@ -12,6 +12,7 @@ import {
   getUserProgress,
   activateProWithToken,
   signOutUser,
+  syncCurrentUserWithSupabase,
   UserAccount,
   CaseCompletionRecord,
 } from './lib/authService';
@@ -34,19 +35,53 @@ export const App: React.FC = () => {
   const [targetUpgradeCaseName, setTargetUpgradeCaseName] = useState<string | undefined>(undefined);
   const [proActivationNotice, setProActivationNotice] = useState<string | null>(null);
 
-  // Check URL query parameters & routes on initial mount
-  // E.g. https://domain.com/admin, ?admin=true, or Whop redirects ?pro_token=WHOP-PRO-2026
+  // Check URL query parameters & routes on initial mount & listen to window events
   useEffect(() => {
-    // Check if visiting admin URL (e.g. /admin, ?admin=true, #admin)
-    const isAdminRoute =
-      window.location.pathname.startsWith('/admin') ||
-      new URLSearchParams(window.location.search).get('admin') === 'true' ||
-      window.location.hash === '#admin';
+    // 1. Check if visiting admin URL (e.g. /admin, ?admin=true, #admin)
+    const checkAdminRoute = () => {
+      const isAdminRoute =
+        window.location.pathname.startsWith('/admin') ||
+        new URLSearchParams(window.location.search).get('admin') === 'true' ||
+        window.location.hash === '#admin';
 
-    if (isAdminRoute) {
-      setIsAdminModalOpen(true);
-    }
+      if (isAdminRoute) {
+        setIsAdminModalOpen(true);
+      }
+    };
 
+    checkAdminRoute();
+    window.addEventListener('popstate', checkAdminRoute);
+    window.addEventListener('hashchange', checkAdminRoute);
+
+    // 2. Live Supabase Profile Sync (syncs Pro grant/revoke across all devices & browsers)
+    const performLiveSync = async () => {
+      const synced = await syncCurrentUserWithSupabase();
+      if (synced) {
+        setCurrentUserState(synced);
+      }
+    };
+
+    performLiveSync();
+
+    const handleFocus = () => {
+      performLiveSync();
+      setUserProgress(getUserProgress());
+    };
+    window.addEventListener('focus', handleFocus);
+
+    // Periodic sync every 20 seconds while browsing
+    const syncInterval = setInterval(performLiveSync, 20000);
+
+    // 3. Secret keyboard shortcut: Ctrl+Shift+A (or Cmd+Shift+A) opens the Admin Portal
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'A' || e.key === 'a')) {
+        e.preventDefault();
+        setIsAdminModalOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    // 4. Handle Whop tokens & checkout redirects
     const handleUrlTokens = async () => {
       try {
         const urlParams = new URLSearchParams(window.location.search);
@@ -73,6 +108,14 @@ export const App: React.FC = () => {
     };
 
     handleUrlTokens();
+
+    return () => {
+      window.removeEventListener('popstate', checkAdminRoute);
+      window.removeEventListener('hashchange', checkAdminRoute);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('keydown', handleKeyDown);
+      clearInterval(syncInterval);
+    };
   }, []);
 
   const handleSelectCase = (caseItem: ClinicalCase) => {
@@ -181,7 +224,12 @@ export const App: React.FC = () => {
       {/* Protected Admin Portal (View Users, Pro/Basic list, Grant/Revoke Pro, Whop config) */}
       <AdminDashboardModal
         isOpen={isAdminModalOpen}
-        onClose={() => setIsAdminModalOpen(false)}
+        onClose={() => {
+          setIsAdminModalOpen(false);
+          if (window.location.pathname.startsWith('/admin') || window.location.hash === '#admin') {
+            window.history.pushState({}, '', '/');
+          }
+        }}
         currentUser={currentUser}
         onRefreshData={handleRefreshAdminData}
       />

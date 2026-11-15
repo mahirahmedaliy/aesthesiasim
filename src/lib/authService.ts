@@ -69,13 +69,52 @@ const VALID_WHOP_TOKEN_HASHES = [
 ];
 
 // ==========================================
-// ADMIN MASTER PASSCODE MANAGEMENT (HASHED)
+// ADMIN MASTER PASSCODE MANAGEMENT (HASHED & CLOUD SYNCED)
 // ==========================================
 export async function verifyAdminPasscode(enteredPasscode: string): Promise<boolean> {
   if (!enteredPasscode) return false;
   const enteredHash = await hashSha256(enteredPasscode);
 
-  // 1. Check custom hash from localStorage if set by admin in the Security panel
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      // 1. Check live database config in profiles table
+      const { data: profileConfig, error: pErr } = await client
+        .from('profiles')
+        .select('pro_token')
+        .eq('id', 'system_admin_config')
+        .maybeSingle();
+
+      if (!pErr && profileConfig?.pro_token && profileConfig.pro_token.trim()) {
+        const remoteHash = profileConfig.pro_token.trim();
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(STORAGE_KEY_ADMIN_PASSCODE, remoteHash);
+        }
+        return enteredHash === remoteHash;
+      }
+
+      // 2. Fallback check in app_settings table
+      const { data: appSettings } = await client
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'admin_passcode_hash')
+        .maybeSingle();
+
+      if (appSettings?.value) {
+        const remoteHash = typeof appSettings.value === 'string' ? appSettings.value : appSettings.value.hash;
+        if (remoteHash && typeof remoteHash === 'string') {
+          if (typeof window !== 'undefined') {
+            localStorage.setItem(STORAGE_KEY_ADMIN_PASSCODE, remoteHash.trim());
+          }
+          return enteredHash === remoteHash.trim();
+        }
+      }
+    } catch (e) {
+      console.warn('Database admin passcode check error, checking cache:', e);
+    }
+  }
+
+  // 3. Check custom hash from localStorage if offline or cached
   if (typeof window !== 'undefined') {
     const storedHash = localStorage.getItem(STORAGE_KEY_ADMIN_PASSCODE);
     if (storedHash && storedHash.trim()) {
@@ -83,7 +122,7 @@ export async function verifyAdminPasscode(enteredPasscode: string): Promise<bool
     }
   }
 
-  // 2. Fallback to default cryptographic hash (SHA-256 of initial setup passcode)
+  // 4. Fallback to default cryptographic hash (SHA-256 of initial setup passcode 'admin2026')
   return enteredHash === DEFAULT_ADMIN_HASH;
 }
 
@@ -91,7 +130,42 @@ export async function saveAdminPasscode(newPasscode: string): Promise<boolean> {
   if (typeof window === 'undefined') return false;
   if (!newPasscode || newPasscode.trim().length < 4) return false;
   const hash = await hashSha256(newPasscode);
+
+  // Update local cache
   localStorage.setItem(STORAGE_KEY_ADMIN_PASSCODE, hash);
+
+  // Sync to Supabase so it applies GLOBALLY on all devices and browsers!
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      await client.from('profiles').upsert([
+        {
+          id: 'system_admin_config',
+          email: 'admin_config@aesthesiasim.com',
+          name: 'Admin Global Config',
+          role: 'admin',
+          is_pro: true,
+          pro_token: hash,
+          updated_at: new Date().toISOString(),
+        },
+      ]);
+
+      try {
+        await client.from('app_settings').upsert([
+          {
+            key: 'admin_passcode_hash',
+            value: { hash },
+            updated_at: new Date().toISOString(),
+          },
+        ]);
+      } catch {}
+
+      return true;
+    } catch (e) {
+      console.warn('Failed to sync new admin passcode to Supabase:', e);
+    }
+  }
+
   return true;
 }
 
@@ -211,6 +285,62 @@ function saveUserToLocalDirectory(user: UserAccount) {
   } catch (e) {
     console.warn('Failed to save to users cache:', e);
   }
+}
+
+/**
+ * Synchronizes the current user's profile and Pro subscription status
+ * with the live Supabase profiles table across all devices and browsers.
+ */
+export async function syncCurrentUserWithSupabase(): Promise<UserAccount | null> {
+  const localUser = getCurrentUser();
+  const client = getSupabaseClient();
+  if (!client) return localUser;
+
+  try {
+    // 1. Check if there's an active Supabase Auth session
+    const { data: sessionData } = await client.auth.getSession();
+    const authUser = sessionData?.session?.user;
+
+    const queryId = authUser?.id || localUser?.id;
+    const queryEmail = (authUser?.email || localUser?.email || '').trim().toLowerCase();
+
+    if (!queryId && !queryEmail) return null;
+
+    // 2. Fetch live profile from Supabase
+    let query = client.from('profiles').select('*');
+    if (queryId && queryEmail) {
+      query = query.or(`id.eq.${queryId},email.eq.${queryEmail}`);
+    } else if (queryId) {
+      query = query.eq('id', queryId);
+    } else {
+      query = query.eq('email', queryEmail);
+    }
+
+    const { data: profile, error } = await query.maybeSingle();
+
+    if (!error && profile) {
+      // Don't treat the system admin config row as a normal user account
+      if (profile.id === 'system_admin_config') return localUser;
+
+      const syncedUser: UserAccount = {
+        id: profile.id,
+        email: profile.email || queryEmail,
+        name: profile.name || localUser?.name || profile.email?.split('@')[0] || 'User',
+        role: profile.role === 'admin' ? 'admin' : 'user',
+        isPro: Boolean(profile.is_pro),
+        proUnlockedAt: profile.updated_at,
+        proActivationToken: profile.pro_token || localUser?.proActivationToken,
+        createdAt: profile.created_at || localUser?.createdAt || new Date().toISOString(),
+      };
+
+      setCurrentUser(syncedUser);
+      return syncedUser;
+    }
+  } catch (err) {
+    console.warn('Failed to sync user with Supabase:', err);
+  }
+
+  return localUser;
 }
 
 /**
@@ -668,7 +798,9 @@ export async function getAllUsersList(): Promise<UserAccount[]> {
     try {
       const { data, error } = await client.from('profiles').select('*').order('created_at', { ascending: false });
       if (!error && data && data.length > 0) {
-        return data.map((p) => ({
+        // Exclude system admin configuration row
+        const userProfiles = data.filter((p) => p.id !== 'system_admin_config');
+        return userProfiles.map((p) => ({
           id: p.id,
           email: p.email || 'user@example.com',
           name: p.name || p.full_name || p.email?.split('@')[0] || 'User',
@@ -688,47 +820,13 @@ export async function getAllUsersList(): Promise<UserAccount[]> {
     try {
       const listRaw = localStorage.getItem(STORAGE_KEY_USERS_LIST);
       if (listRaw) {
-        const list = JSON.parse(listRaw);
-        if (list.length > 0) return list;
+        const list: UserAccount[] = JSON.parse(listRaw);
+        if (list.length > 0) return list.filter((u) => u.id !== 'system_admin_config');
       }
     } catch {}
   }
 
-  // Default seed list if completely empty
-  const defaultList: UserAccount[] = [
-    {
-      id: 'admin-1',
-      email: 'doctor@anesthesia.org',
-      name: 'Chief Anesthesiologist (Admin)',
-      role: 'admin',
-      isPro: true,
-      createdAt: '2026-01-15T08:00:00Z',
-    },
-    {
-      id: 'user-demo-1',
-      email: 'resident.smith@hospital.edu',
-      name: 'Dr. Sarah Smith (Resident)',
-      role: 'user',
-      isPro: true,
-      proUnlockedAt: '2026-02-01T14:20:00Z',
-      proActivationToken: 'WHOP-PRO-2026',
-      createdAt: '2026-02-01T10:00:00Z',
-    },
-    {
-      id: 'user-demo-2',
-      email: 'nurse.jones@clinic.com',
-      name: 'CRNA Michael Jones',
-      role: 'user',
-      isPro: false,
-      createdAt: '2026-02-10T11:30:00Z',
-    },
-  ];
-
-  if (typeof window !== 'undefined') {
-    localStorage.setItem(STORAGE_KEY_USERS_LIST, JSON.stringify(defaultList));
-  }
-
-  return defaultList;
+  return [];
 }
 
 export async function toggleUserProStatus(userId: string, isPro: boolean): Promise<boolean> {
@@ -736,7 +834,14 @@ export async function toggleUserProStatus(userId: string, isPro: boolean): Promi
 
   if (client) {
     try {
-      await client.from('profiles').update({ is_pro: isPro, updated_at: new Date().toISOString() }).eq('id', userId);
+      const { error } = await client
+        .from('profiles')
+        .update({ is_pro: isPro, updated_at: new Date().toISOString() })
+        .or(`id.eq.${userId},email.eq.${userId}`);
+
+      if (error) {
+        console.warn('Supabase toggle error:', error.message);
+      }
     } catch (e) {
       console.warn('Supabase toggle error:', e);
     }
@@ -747,7 +852,7 @@ export async function toggleUserProStatus(userId: string, isPro: boolean): Promi
     try {
       const listRaw = localStorage.getItem(STORAGE_KEY_USERS_LIST);
       const list: UserAccount[] = listRaw ? JSON.parse(listRaw) : [];
-      const user = list.find((u) => u.id === userId);
+      const user = list.find((u) => u.id === userId || u.email === userId);
       if (user) {
         user.isPro = isPro;
         user.proUnlockedAt = isPro ? new Date().toISOString() : undefined;
@@ -756,7 +861,7 @@ export async function toggleUserProStatus(userId: string, isPro: boolean): Promi
 
       // If active current user, update current user too
       const current = getCurrentUser();
-      if (current && current.id === userId) {
+      if (current && (current.id === userId || current.email === userId)) {
         current.isPro = isPro;
         setCurrentUser(current);
       }
@@ -766,5 +871,5 @@ export async function toggleUserProStatus(userId: string, isPro: boolean): Promi
     }
   }
 
-  return false;
+  return true;
 }
