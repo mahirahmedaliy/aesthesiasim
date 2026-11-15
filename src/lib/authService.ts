@@ -344,17 +344,20 @@ export async function syncCurrentUserWithSupabase(): Promise<UserAccount | null>
 }
 
 /**
- * Sign In with Email & Password (with Supabase + Local Fallback)
+ * Sign In with Email & Password
  */
 export async function signInUser(
   email: string,
   pass: string
 ): Promise<{ success: boolean; user?: UserAccount; error?: string }> {
   const cleanEmail = email.trim().toLowerCase();
-  const client = getSupabaseClient();
+  if (!cleanEmail || !pass) {
+    return { success: false, error: 'Please enter both email and password.' };
+  }
 
-  // Check if admin credentials
+  const client = getSupabaseClient();
   const isAdminEmail = cleanEmail.includes('admin') || cleanEmail === 'doctor@anesthesia.org';
+  const isMasterPass = await verifyAdminPasscode(pass);
 
   if (client) {
     try {
@@ -364,12 +367,43 @@ export async function signInUser(
       });
 
       if (error) {
-        // Fallback to local user check if offline or local account
-        return await checkLocalSignIn(cleanEmail, pass);
+        // Master admin passcode override
+        if (isMasterPass) {
+          const adminUser: UserAccount = {
+            id: `admin-${Date.now()}`,
+            email: cleanEmail,
+            name: 'System Administrator',
+            role: 'admin',
+            isPro: true,
+            createdAt: new Date().toISOString(),
+          };
+          setCurrentUser(adminUser);
+          return { success: true, user: adminUser };
+        }
+
+        const msg = error.message?.toLowerCase() || '';
+        if (msg.includes('invalid login credentials') || msg.includes('invalid credentials')) {
+          return {
+            success: false,
+            error: 'No account found with this email, or incorrect password. If you do not have an account, please click Register.',
+          };
+        }
+
+        if (msg.includes('email not confirmed')) {
+          return {
+            success: false,
+            error: 'Your email has not been confirmed yet. Please verify your email or register a new account.',
+          };
+        }
+
+        return {
+          success: false,
+          error: error.message || 'Invalid email or password.',
+        };
       }
 
       if (data?.user) {
-        // Fetch or create profile
+        // Authenticated successfully with Supabase!
         let isPro = false;
         let role: 'admin' | 'user' = isAdminEmail ? 'admin' : 'user';
 
@@ -378,13 +412,13 @@ export async function signInUser(
             .from('profiles')
             .select('is_pro, role, name')
             .eq('id', data.user.id)
-            .single();
+            .maybeSingle();
 
           if (profile) {
             isPro = profile.is_pro ?? false;
             role = profile.role || role;
           } else {
-            // Profile doesn't exist yet, create it
+            // Profile row missing, create it for this authenticated user
             await client.from('profiles').upsert([
               {
                 id: data.user.id,
@@ -416,67 +450,31 @@ export async function signInUser(
         return { success: true, user };
       }
     } catch (err: any) {
-      return checkLocalSignIn(cleanEmail, pass);
+      console.warn('Supabase sign-in error:', err);
+      return {
+        success: false,
+        error: err?.message || 'Authentication error. Please try again.',
+      };
     }
   }
 
-  return await checkLocalSignIn(cleanEmail, pass);
-}
-
-async function checkLocalSignIn(email: string, pass: string) {
-  // Check Supabase profiles table directly in case Supabase Auth is rate-limited
-  const client = getSupabaseClient();
-  if (client) {
-    try {
-      const { data: profile } = await client
-        .from('profiles')
-        .select('*')
-        .eq('email', email.toLowerCase())
-        .maybeSingle();
-
-      if (profile && profile.id !== 'system_admin_config') {
-        const user: UserAccount = {
-          id: profile.id,
-          email: profile.email || email,
-          name: profile.name || email.split('@')[0],
-          role: profile.role === 'admin' ? 'admin' : 'user',
-          isPro: Boolean(profile.is_pro),
-          createdAt: profile.created_at || new Date().toISOString(),
-        };
-        setCurrentUser(user);
-        return { success: true, user };
-      }
-    } catch (e) {
-      console.warn('Profiles check in fallback error:', e);
-    }
-  }
-
-  // Local verification
-  const listRaw = localStorage.getItem(STORAGE_KEY_USERS_LIST);
+  // If Supabase is offline / unconfigured:
+  // ONLY allow sign-in if the user previously registered on this device
+  const listRaw = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_USERS_LIST) : null;
   const list: UserAccount[] = listRaw ? JSON.parse(listRaw) : [];
-  const existing = list.find((u) => u.email.toLowerCase() === email.toLowerCase());
-
-  const isPassAdmin = await verifyAdminPasscode(pass);
-  const isAdmin = email.includes('admin') || isPassAdmin;
+  const existing = list.find((u) => u.email.toLowerCase() === cleanEmail);
 
   if (existing) {
-    if (isAdmin) existing.role = 'admin';
+    if (isMasterPass) existing.role = 'admin';
     setCurrentUser(existing);
     return { success: true, user: existing };
   }
 
-  // Create new local user
-  const newUser: UserAccount = {
-    id: `user-${Date.now()}`,
-    email,
-    name: email.split('@')[0],
-    role: isAdmin ? 'admin' : 'user',
-    isPro: false,
-    createdAt: new Date().toISOString(),
+  // User does NOT have an account! Never create an account on Sign In.
+  return {
+    success: false,
+    error: 'No account found with this email. Please click Register to create an account.',
   };
-
-  setCurrentUser(newUser);
-  return { success: true, user: newUser };
 }
 
 /**
@@ -488,6 +486,14 @@ export async function signUpUser(
   name: string
 ): Promise<{ success: boolean; user?: UserAccount; error?: string }> {
   const cleanEmail = email.trim().toLowerCase();
+  if (!cleanEmail || !pass) {
+    return { success: false, error: 'Please enter both email and password.' };
+  }
+
+  if (pass.length < 6) {
+    return { success: false, error: 'Password must be at least 6 characters long.' };
+  }
+
   const client = getSupabaseClient();
   const isAdmin = cleanEmail.includes('admin');
 
@@ -498,7 +504,7 @@ export async function signUpUser(
         password: pass,
         options: {
           data: {
-            name,
+            name: name || cleanEmail.split('@')[0],
             role: isAdmin ? 'admin' : 'user',
             is_pro: false,
           },
@@ -506,13 +512,32 @@ export async function signUpUser(
       });
 
       if (error) {
-        // If Supabase default email mailer hits rate limit (3 emails/hr on free tier),
-        // gracefully register in profiles table so users can sign up without being blocked!
         const errMsg = error.message?.toLowerCase() || '';
+
+        // Check if user already registered
+        if (
+          errMsg.includes('already registered') ||
+          errMsg.includes('already exists') ||
+          errMsg.includes('user already in use')
+        ) {
+          return {
+            success: false,
+            error: 'An account with this email already exists. Please sign in instead.',
+          };
+        }
+
+        // If password does not meet requirements
+        if (errMsg.includes('password')) {
+          return {
+            success: false,
+            error: error.message,
+          };
+        }
+
+        // Graceful fallback for rate limits
         if (
           errMsg.includes('rate limit') ||
-          errMsg.includes('email') ||
-          errMsg.includes('exceeded') ||
+          errMsg.includes('over_email_send_rate_limit') ||
           (error as any).status === 429
         ) {
           console.warn('Supabase email rate limit intercepted, registering directly to profiles');
@@ -546,7 +571,16 @@ export async function signUpUser(
           return { success: true, user: fallbackUser };
         }
 
-        return { success: false, error: error.message };
+        return { success: false, error: error.message || 'Failed to create account.' };
+      }
+
+      // Supabase behavior: If email confirmation is enabled and user already exists,
+      // signUp returns an empty identities array: data.user.identities == []
+      if (data?.user?.identities && data.user.identities.length === 0) {
+        return {
+          success: false,
+          error: 'An account with this email already exists. Please sign in instead.',
+        };
       }
 
       if (data?.user) {
@@ -581,10 +615,11 @@ export async function signUpUser(
       }
     } catch (err: any) {
       console.warn('Supabase sign up error, falling back locally:', err);
+      return { success: false, error: err?.message || 'Failed to create account.' };
     }
   }
 
-  // Local signup
+  // Local signup only when offline / no client
   const user: UserAccount = {
     id: `user-${Date.now()}`,
     email: cleanEmail,

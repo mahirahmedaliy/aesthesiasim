@@ -264,6 +264,40 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             )}
           </button>
 
+          {mode === 'signin' && (
+            <p className="text-center text-xs text-slate-400">
+              Don't have an account yet?{' '}
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('signup');
+                  setErrorMsg('');
+                  setSuccessMsg('');
+                }}
+                className="text-sky-400 hover:text-sky-300 font-bold underline cursor-pointer ml-1"
+              >
+                Register here
+              </button>
+            </p>
+          )}
+
+          {mode === 'signup' && (
+            <p className="text-center text-xs text-slate-400">
+              Already have an account?{' '}
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('signin');
+                  setErrorMsg('');
+                  setSuccessMsg('');
+                }}
+                className="text-sky-400 hover:text-sky-300 font-bold underline cursor-pointer ml-1"
+              >
+                Sign In
+              </button>
+            </p>
+          )}
+
           {mode === 'forgot' && (
             <button
               type="button"
