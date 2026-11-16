@@ -94,7 +94,13 @@ export function simulatePhysiologyTick(
   let activeMorphineMg = 0;
   let activeMidazolamMg = 0;
   let activeDexmedetomidineMcg = 0;
+
+  // Neuromuscular Blockers by Pharmacological Class
+  let activeSteroidalRelaxant = 0;       // Rocuronium, Vecuronium, Pancuronium
+  let activeIsoquinolineRelaxant = 0;    // Cisatracurium, Atracurium
+  let activeDepolarizingRelaxant = 0;    // Succinylcholine
   let activeRelaxantIntensity = 0;
+
   let activeLidocaineMg = 0;
   let activeBupivacaineMg = 0;
   let activePressorScore = 0;
@@ -110,6 +116,7 @@ export function simulatePhysiologyTick(
   let activeNaloxoneMg = 0;
   let activeFlumazenilMg = 0;
   let activeSugammadexMg = 0;
+  let activeNeostigmineMg = 0;
   let activeIntralipidMl = 0;
 
   for (const drug of activeDrugs) {
@@ -159,11 +166,12 @@ export function simulatePhysiologyTick(
       else if (key === 'morphine') activeMorphineMg += effectiveDose;
       else if (key === 'midazolam') activeMidazolamMg += effectiveDose;
       else if (key === 'dexmedetomidine') activeDexmedetomidineMcg += effectiveDose;
-      else if (key === 'rocuronium') activeRelaxantIntensity += (effectiveDose / (patient.weightKg * 0.6));
-      else if (key === 'succinylcholine') activeRelaxantIntensity += (effectiveDose / (patient.weightKg * 1.0));
-      else if (key === 'vecuronium') activeRelaxantIntensity += (effectiveDose / (patient.weightKg * 0.08));
-      else if (key === 'cisatracurium') activeRelaxantIntensity += (effectiveDose / (patient.weightKg * 0.15));
-      else if (key === 'pancuronium') activeRelaxantIntensity += (effectiveDose / (patient.weightKg * 0.10));
+      else if (key === 'rocuronium') activeSteroidalRelaxant += (effectiveDose / (patient.weightKg * 0.6));
+      else if (key === 'vecuronium') activeSteroidalRelaxant += (effectiveDose / (patient.weightKg * 0.08));
+      else if (key === 'pancuronium') activeSteroidalRelaxant += (effectiveDose / (patient.weightKg * 0.10));
+      else if (key === 'cisatracurium') activeIsoquinolineRelaxant += (effectiveDose / (patient.weightKg * 0.15));
+      else if (key === 'atracurium') activeIsoquinolineRelaxant += (effectiveDose / (patient.weightKg * 0.45));
+      else if (key === 'succinylcholine') activeDepolarizingRelaxant += (effectiveDose / (patient.weightKg * 1.0));
       else if (key.includes('lidocaine')) activeLidocaineMg += effectiveDose;
       else if (key.includes('bupivacaine')) activeBupivacaineMg += effectiveDose;
       else if (key === 'phenylephrine') activePressorScore += (effectiveDose / 100) * 1.2;
@@ -182,6 +190,11 @@ export function simulatePhysiologyTick(
       else if (key === 'naloxone') activeNaloxoneMg += effectiveDose;
       else if (key === 'flumazenil') activeFlumazenilMg += effectiveDose;
       else if (key === 'sugammadex') activeSugammadexMg += effectiveDose;
+      else if (key === 'neostigmine_glyco' || key.includes('neostigmine')) {
+        activeNeostigmineMg += effectiveDose;
+        // Glycopyrrolate co-administered with neostigmine provides muscarinic anticholinergic protection
+        activeAtropineMg += effectiveDose * 0.2 * 1.8;
+      }
       else if (key.includes('lipid')) activeIntralipidMl += effectiveDose;
     }
   }
@@ -203,9 +216,57 @@ export function simulatePhysiologyTick(
     activeMidazolamMg = Math.max(0, activeMidazolamMg - benzoReversalPower);
   }
 
-  // Sugammadex reverses steroidal neuromuscular blockers (Rocuronium / Vecuronium)
-  if (activeSugammadexMg >= 100) {
-    activeRelaxantIntensity = 0;
+  // Sugammadex selectively encapsulates STEROIDAL non-depolarizing neuromuscular blockers (Rocuronium / Vecuronium)
+  // 1:1 molecular encapsulation permanently binds rocuronium/vecuronium molecules.
+  // Note: Sugammadex has NO chemical affinity for benzylisoquinolines (Cisatracurium, Atracurium) or Succinylcholine!
+  let steroidalFullyReversed = false;
+  if (activeSugammadexMg > 0) {
+    const sugammadexMgPerKg = activeSugammadexMg / patient.weightKg;
+    // Standard adult dose is 2-4 mg/kg (or adult bolus >= 80mg)
+    if (sugammadexMgPerKg >= 1.5 || activeSugammadexMg >= 80) {
+      activeSteroidalRelaxant = 0;
+      steroidalFullyReversed = true;
+    } else if (sugammadexMgPerKg >= 0.7) {
+      activeSteroidalRelaxant = Math.max(0, activeSteroidalRelaxant * 0.2);
+    }
+  }
+
+  // Neostigmine (with Glycopyrrolate) competitively reverses ALL Non-Depolarizing Neuromuscular Blockers (NDNMBs)
+  // Reverses both Steroidal (Rocuronium, Vecuronium, Pancuronium) AND Benzylisoquinolines (Cisatracurium, Atracurium)
+  // Note: Neostigmine CANNOT reverse Succinylcholine (it inhibits pseudocholinesterase and prolongs depolarizing block)
+  let ndnmbFullyReversed = false;
+  if (activeNeostigmineMg > 0) {
+    const neostigmineMgPerKg = activeNeostigmineMg / patient.weightKg;
+    // Standard adult reversal dose: 0.04 - 0.07 mg/kg (typically 2.5 - 5.0 mg, threshold >= 1.5mg)
+    if (activeNeostigmineMg >= 1.5 || neostigmineMgPerKg >= 0.025) {
+      activeSteroidalRelaxant = 0;
+      activeIsoquinolineRelaxant = 0;
+      ndnmbFullyReversed = true;
+    } else if (activeNeostigmineMg >= 0.75) {
+      activeSteroidalRelaxant = Math.max(0, activeSteroidalRelaxant * 0.25);
+      activeIsoquinolineRelaxant = Math.max(0, activeIsoquinolineRelaxant * 0.25);
+    }
+  }
+
+  // Combined post-reversal relaxant intensity
+  activeRelaxantIntensity = activeSteroidalRelaxant + activeIsoquinolineRelaxant + activeDepolarizingRelaxant;
+
+  // Clear/neutralize permanent chemical binding from active drugs list so they don't linger
+  if (steroidalFullyReversed) {
+    for (const d of updatedDrugs) {
+      const k = (d.drugId || d.id).toLowerCase();
+      if (k === 'rocuronium' || k === 'vecuronium') {
+        d.currentIntensity = 0;
+      }
+    }
+  }
+  if (ndnmbFullyReversed) {
+    for (const d of updatedDrugs) {
+      const k = (d.drugId || d.id).toLowerCase();
+      if (['rocuronium', 'vecuronium', 'cisatracurium', 'atracurium', 'pancuronium'].includes(k)) {
+        d.currentIntensity = 0;
+      }
+    }
   }
 
   // Intralipid (20% Lipid Emulsion) scavenges local anesthetics (reverses LAST)

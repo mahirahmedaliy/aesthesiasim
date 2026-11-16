@@ -1167,17 +1167,61 @@ export const SIMULATOR_DRUGS: SimulatorDrug[] = [
     unit: 'mg',
     mgPerKgMin: 2.0,
     mgPerKgMax: 16.0,
+    fixedDoseDefault: 200,
     quickDoses: [100, 200, 400, 800, 1200],
     routes: ['IV Bolus'],
     defaultRoute: 'IV Bolus',
     onsetSec: 60,
     peakSec: 120,
     durationSec: 7200,
-    description: 'Modified gamma-cyclodextrin. Encapsulates rocuronium and vecuronium 1:1, producing complete chemical inactivation. Reverses moderate block (TOF 2/4) at 2 mg/kg, deep block (PTC 1-2) at 4 mg/kg, and immediate rescue reversal at 16 mg/kg.',
-    applyEffect: (phys, dose, p) => {
-      const mgPerKg = dose / p.weightKg;
+    description: 'Modified gamma-cyclodextrin. Selectively encapsulates steroidal NDNMBs (rocuronium, vecuronium) in a 1:1 molecular complex, terminating receptor binding. Reverses moderate block (TOF 2/4) at 2 mg/kg, deep block (PTC 1-2) at 4 mg/kg, and immediate rescue reversal at 16 mg/kg. NOTE: Has ZERO affinity for benzylisoquinolines (Cisatracurium) or Succinylcholine.',
+    applyEffect: (phys, dose, p, route, activeDrugs) => {
+      const mgPerKg = p ? dose / p.weightKg : 2.0;
+      const activeList = activeDrugs || [];
+
+      const hasSteroidal = activeList.some(
+        (d) => ['rocuronium', 'vecuronium', 'pancuronium'].includes(d.drugId.toLowerCase()) && (d.currentIntensity === undefined || d.currentIntensity > 0.02)
+      );
+      const hasBenzylisoquinoline = activeList.some(
+        (d) => ['cisatracurium', 'atracurium'].includes(d.drugId.toLowerCase()) && (d.currentIntensity === undefined || d.currentIntensity > 0.02)
+      );
+      const hasSuccinylcholine = activeList.some(
+        (d) => d.drugId.toLowerCase() === 'succinylcholine' && (d.currentIntensity === undefined || d.currentIntensity > 0.02)
+      );
+
+      // Inappropriate Reversal Check: Sugammadex CANNOT reverse Cisatracurium!
+      if (hasBenzylisoquinoline && !hasSteroidal) {
+        return {
+          narrative: `⚠️ Sugammadex ${dose}mg IV given (${mgPerKg.toFixed(1)} mg/kg). CLINICAL PHARMACOLOGY ALERT: Sugammadex selectively encapsulates STEROIDAL relaxants (Rocuronium / Vecuronium) and has ZERO affinity for benzylisoquinolines (Cisatracurium / Atracurium)! Neuromuscular blockade remains unchanged (TOF ${phys.tofCount}/4). Administer Neostigmine + Glycopyrrolate to reverse Cisatracurium!`,
+          vitalsChanges: {},
+        };
+      }
+
+      // Inappropriate Reversal Check: Sugammadex CANNOT reverse Succinylcholine!
+      if (hasSuccinylcholine && !hasSteroidal) {
+        return {
+          narrative: `⚠️ Sugammadex ${dose}mg IV administered. Sugammadex has no affinity for depolarizing blockers (Succinylcholine). Blockade remains unchanged (TOF ${phys.tofCount}/4). Succinylcholine terminates spontaneously via plasma pseudocholinesterase.`,
+          vitalsChanges: {},
+        };
+      }
+
+      // Subtherapeutic dose check (< 1.5 mg/kg and < 80 mg)
+      if (mgPerKg < 1.5 && dose < 80) {
+        return {
+          narrative: `Sugammadex ${dose}mg IV administered (${mgPerKg.toFixed(1)} mg/kg). Subtherapeutic dose for full reversal (< 2.0 mg/kg). Partial recovery observed: TOF 2/4. Consider an additional dose to ensure TOF ratio >= 0.90 before extubation.`,
+          vitalsChanges: {
+            muscleTone: 'relaxed',
+            muscleTonePercent: 50,
+            trainOfFour: 2,
+            tofCount: 2,
+            tofRatio: 0.45,
+          },
+        };
+      }
+
+      // Successful appropriate reversal of steroidal NDNMB
       return {
-        narrative: `Sugammadex ${dose}mg IV administered (${mgPerKg.toFixed(1)} mg/kg). Rapid 1:1 molecular encapsulation of rocuronium. Neuromuscular blockade completely reversed in under 90 seconds! TOF 4/4 with ratio > 0.95. Strong spontaneous respiratory efforts restored.`,
+        narrative: `Sugammadex ${dose}mg IV administered (${mgPerKg.toFixed(1)} mg/kg). Rapid 1:1 molecular encapsulation of steroidal neuromuscular blocker. Blockade completely reversed! TOF 4/4 with ratio > 0.95. Strong spontaneous respiratory efforts and full motor tone restored.`,
         vitalsChanges: {
           muscleTone: 'normal',
           muscleTonePercent: 100,
@@ -1196,19 +1240,41 @@ export const SIMULATOR_DRUGS: SimulatorDrug[] = [
     unit: 'mg',
     mgPerKgMin: 0.04,
     mgPerKgMax: 0.07,
+    fixedDoseDefault: 3.5,
     quickDoses: [2.5, 3.5, 5.0],
     routes: ['IV Bolus'],
     defaultRoute: 'IV Bolus',
     onsetSec: 60,
     peakSec: 180,
     durationSec: 3600,
-    description: 'Acetylcholinesterase inhibitor (Neostigmine 0.05 mg/kg) paired with quaternary muscarinic anticholinergic (Glycopyrrolate 0.01 mg/kg) to prevent profound muscarinic bradycardia, salivation, and bronchoconstriction. Effectively reverses non-depolarizing neuromuscular blockade (Vecuronium, Rocuronium, Cisatracurium).',
+    description: 'Acetylcholinesterase inhibitor (Neostigmine 0.05 mg/kg) paired with quaternary muscarinic anticholinergic (Glycopyrrolate 0.01 mg/kg) to prevent profound muscarinic bradycardia, salivation, and bronchoconstriction. Effectively reverses ALL non-depolarizing neuromuscular blockers (Cisatracurium, Vecuronium, Rocuronium, Atracurium, Pancuronium).',
     patientWarning: (p) => {
       return null;
     },
-    applyEffect: (phys, dose) => {
+    applyEffect: (phys, dose, p, route, activeDrugs) => {
+      const mgPerKg = p ? dose / p.weightKg : 0.05;
+      const activeList = activeDrugs || [];
+
+      const hasSuccinylcholine = activeList.some(
+        (d) => d.drugId.toLowerCase() === 'succinylcholine' && (d.currentIntensity === undefined || d.currentIntensity > 0.02)
+      );
+
+      if (hasSuccinylcholine) {
+        return {
+          narrative: `🚨 CONTRAINDICATION: Neostigmine administered during depolarizing block (Succinylcholine)! Anticholinesterase activity inhibits plasma pseudocholinesterase and prolongs succinylcholine paralysis. Never use neostigmine for depolarizing block!`,
+          vitalsChanges: {
+            muscleTone: 'flaccid',
+            muscleTonePercent: 0,
+            trainOfFour: 0,
+            tofCount: 0,
+            tofRatio: 0,
+          },
+        };
+      }
+
+      // Successful appropriate reversal of non-depolarizing neuromuscular blockade
       return {
-        narrative: `Neostigmine ${dose}mg + Glycopyrrolate co-administered IV. Acetylcholinesterase enzyme inhibited, leading to acetylcholine accumulation at the neuromuscular junction and competitive reversal of non-depolarizing block. Muscarinic bradycardia and secretions neutralized by glycopyrrolate. Full motor strength restored: Train-of-Four 4/4 (ratio 0.94)!`,
+        narrative: `Neostigmine ${dose}mg + Glycopyrrolate co-administered IV (${mgPerKg.toFixed(3)} mg/kg). Acetylcholinesterase enzyme inhibited, leading to acetylcholine accumulation at the neuromuscular junction and competitive reversal of non-depolarizing block (Rocuronium, Vecuronium, Cisatracurium). Muscarinic bradycardia and secretions neutralized by glycopyrrolate. Full motor strength restored: Train-of-Four 4/4 (ratio 0.94)!`,
         vitalsChanges: {
           muscleTone: 'normal',
           muscleTonePercent: 100,
@@ -1225,6 +1291,7 @@ export const SIMULATOR_DRUGS: SimulatorDrug[] = [
     name: 'Naloxone (Narcan)',
     category: 'Reversal Agents',
     unit: 'mcg',
+    fixedDoseDefault: 400,
     quickDoses: [40, 80, 100, 200, 400],
     routes: ['IV Bolus'],
     defaultRoute: 'IV Bolus',
@@ -1252,6 +1319,7 @@ export const SIMULATOR_DRUGS: SimulatorDrug[] = [
     name: 'Flumazenil (Romazicon)',
     category: 'Reversal Agents',
     unit: 'mg',
+    fixedDoseDefault: 0.2,
     quickDoses: [0.2, 0.4, 0.6, 1.0],
     routes: ['IV Bolus'],
     defaultRoute: 'IV Bolus',
@@ -2064,6 +2132,7 @@ export const SIMULATOR_DRUGS: SimulatorDrug[] = [
     name: '20% Lipid Emulsion (Intralipid)',
     category: 'Emergency & Resuscitation',
     unit: 'mL',
+    fixedDoseDefault: 100,
     quickDoses: [100, 250, 500],
     routes: ['IV Bolus', 'IV Infusion'],
     defaultRoute: 'IV Bolus',

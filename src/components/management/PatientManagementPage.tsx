@@ -2138,9 +2138,16 @@ export const PatientManagementPage: React.FC<PatientManagementPageProps> = ({
           addNarratorMessage('CPR: High-quality manual chest compressions initiated (rate 100-120/min). Artificial perfusion generated.', 'info', 'Nurse');
         }}
         onAdministerAntidote={(antidoteId) => {
-          const antDrug = SIMULATOR_DRUGS.find((d) => d.id === antidoteId);
+          const targetId = antidoteId === 'intralipid' ? 'lipid_emulsion' : antidoteId;
+          const antDrug = SIMULATOR_DRUGS.find((d) => d.id === targetId || d.id === antidoteId);
           if (antDrug) {
-            handleAdministerDrug(antDrug, antDrug.fixedDoseDefault || 1, antDrug.defaultRoute);
+            let defaultDose = antDrug.fixedDoseDefault || 1;
+            if (targetId === 'sugammadex') defaultDose = 200;
+            else if (targetId === 'naloxone') defaultDose = 400;
+            else if (targetId === 'flumazenil') defaultDose = 0.2;
+            else if (targetId === 'lipid_emulsion') defaultDose = 100;
+            else if (targetId === 'neostigmine_glyco') defaultDose = 3.5;
+            handleAdministerDrug(antDrug, defaultDose, antDrug.defaultRoute);
           }
         }}
         onPatientDied={(reason) => {

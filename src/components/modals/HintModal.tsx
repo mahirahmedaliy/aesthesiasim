@@ -59,7 +59,7 @@ export const HintModal: React.FC<HintModalProps> = ({
     (monitoring?.nibpAttached ?? true);
 
   const hasHypnotic = hasDrug('propofol') || hasDrug('etomidate') || hasDrug('ketamine') || hasDrug('thiopental');
-  const hasRelaxant = hasDrug('rocuronium') || hasDrug('vecuronium') || hasDrug('succinylcholine') || hasDrug('atracurium');
+  const hasRelaxant = hasDrug('rocuronium') || hasDrug('vecuronium') || hasDrug('succinylcholine') || hasDrug('cisatracurium') || hasDrug('atracurium');
   const hasReversal = hasDrug('sugammadex') || hasDrug('neostigmine');
 
   const isParalyzed = phys.tofCount < 4 || phys.muscleTonePercent < 50;
@@ -199,7 +199,7 @@ export const HintModal: React.FC<HintModalProps> = ({
     if (vent.vaporizerDialPercent > 0) {
       nextAction = 'Turn Sevoflurane vaporizer dial to 0% and increase fresh gas flow to 6–8 L/min (100% O2) to wash out volatile agent.';
       rationale = 'Allows volatile anesthetic to wash out of blood and brain so the patient can regain consciousness.';
-    } else if (phys.tofCount < 4 || !hasReversal) {
+    } else if (phys.tofCount < 4 || (phys.muscleTonePercent < 75 && !hasReversal)) {
       nextAction = `Residual neuromuscular block present (TOF ${phys.tofCount}/4). Administer Sugammadex (2-4 mg/kg = 200 mg IV) or Neostigmine + Glycopyrrolate before extubating!`;
       rationale = 'CRITICAL SAFETY: Extubating with residual paralysis (TOF < 4/4) causes acute upper airway collapse, hypoventilation, and hypoxic arrest.';
     } else if (isIntubated && (phys.consciousness !== 'awake' || vent.bagVentSwitch === 'vent')) {
