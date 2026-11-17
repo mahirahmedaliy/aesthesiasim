@@ -141,6 +141,7 @@ export const PatientManagementPage: React.FC<PatientManagementPageProps> = ({
   // Clinical Mistakes & Real-Life Scoring System
   const [mistakes, setMistakes] = useState<ClinicalMistake[]>([]);
   const lastMistakeTimestampsRef = useRef<Record<string, number>>({});
+  const hasAdministeredSuxRef = useRef<boolean>(false);
 
   // Modals & UI Controls
   const [hintsUsedCount, setHintsUsedCount] = useState<number>(0);
@@ -589,6 +590,41 @@ export const PatientManagementPage: React.FC<PatientManagementPageProps> = ({
               25,
               nextSec
             );
+          }
+        }
+
+        // 2b. Intraoperative Muscle Relaxation & Succinylcholine Wear-Off
+        if (phase === 'maintenance' && p.airwayDevice === 'ett') {
+          const hasActiveNdnmb = tickResult.activeDrugs.some(
+            (d) =>
+              ['rocuronium', 'vecuronium', 'cisatracurium', 'atracurium', 'pancuronium'].includes((d.drugId || '').toLowerCase()) &&
+              (d.currentIntensity ?? 0) > 0.15
+          );
+
+          if (!hasActiveNdnmb && p.tofCount >= 2) {
+            if (hasAdministeredSuxRef.current) {
+              recordMistake(
+                'Pharmacology & Safety',
+                'major',
+                'Succinylcholine Worn Off Without Intermediate Relaxant',
+                `Patient has regained neuromuscular twitches (TOF ${p.tofCount}/4, Tone ${p.muscleTonePercent}%) during active surgery. Succinylcholine has completely worn off without an intermediate muscle relaxant (Rocuronium or Cisatracurium).`,
+                'Loss of surgical muscle relaxation, tight abdominal wall, visceral protrusion, ventilator dyssynchrony (Curare clefts), and risk of trocar injury.',
+                'Succinylcholine is strictly an intubating relaxant (3-5 min duration). Administer an intermediate non-depolarizing blocker (e.g. Rocuronium 30-50 mg IV) to maintain surgical relaxation.',
+                15,
+                nextSec
+              );
+            } else {
+              recordMistake(
+                'Pharmacology & Safety',
+                'major',
+                'Inadequate Surgical Muscle Relaxation',
+                `Neuromuscular blockade has worn off to TOF ${p.tofCount}/4 (Tone ${p.muscleTonePercent}%) during active surgery.`,
+                'Abdominal wall tension increases, impairing surgical visibility and exposure, and increasing peak airway pressures.',
+                'Administer a maintenance redose of muscle relaxant (e.g. Rocuronium 10-15 mg IV).',
+                10,
+                nextSec
+              );
+            }
           }
         }
 
@@ -1045,6 +1081,7 @@ export const PatientManagementPage: React.FC<PatientManagementPageProps> = ({
       },
     });
     setActiveDrugs([]);
+    hasAdministeredSuxRef.current = false;
     setComplications(clinicalCase.scriptedComplications.map((c) => ({ ...c })));
     setPhase('preop_assessment');
     setPhaseStartTimeSec(0);
@@ -1210,6 +1247,9 @@ export const PatientManagementPage: React.FC<PatientManagementPageProps> = ({
     };
 
     setActiveDrugs((prev) => [activeEffect, ...prev]);
+    if (drug.id.toLowerCase() === 'succinylcholine') {
+      hasAdministeredSuxRef.current = true;
+    }
 
     // Check if this treats an active complication
     setComplications((currentComps) =>

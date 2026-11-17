@@ -132,21 +132,32 @@ export function simulatePhysiologyTick(
     if (ageSec < peak) {
       // Onset phase (ramping up to peak)
       intensity = 0.5 + 0.5 * (ageSec / Math.max(1, peak));
-    } else if (ageSec <= duration) {
-      // Redistribution / Alpha phase decay
-      const decayFraction = (ageSec - peak) / Math.max(1, duration - peak);
-      // Bolus hypnotics redistribute rapidly (exponential curve)
-      if (drug.category === 'Induction & Hypnotics') {
-        intensity = Math.max(0.04, Math.exp(-2.2 * decayFraction));
-      } else if (drug.category === 'Opioids') {
-        intensity = Math.max(0.05, Math.exp(-1.5 * decayFraction));
-      } else {
-        intensity = Math.max(0.05, 1.0 - decayFraction * 0.95);
-      }
     } else {
-      // Elimination / Beta phase
-      const postDuration = ageSec - duration;
-      intensity = Math.max(0, Math.exp(-3.0 * (postDuration / 120)));
+      // Smooth continuous redistribution & elimination decay
+      const decayFraction = (ageSec - peak) / Math.max(1, duration - peak);
+
+      if (key === 'succinylcholine') {
+        // Succinylcholine: Ultra-rapid exponential hydrolysis by plasma butyrylcholinesterase (t1/2 ~ 47s)
+        // Recovers rapidly: twitches return by 2-3 min, full spontaneous recovery by 3.5-4 min
+        intensity = Math.max(0.01, Math.exp(-4.2 * decayFraction));
+      } else if (['rocuronium', 'vecuronium', 'cisatracurium', 'atracurium', 'pancuronium'].includes(key)) {
+        // Non-depolarizing neuromuscular blockers: Sigmoidal Hill-type NMJ receptor occupancy curve
+        // Flaccid surgical block (>90% receptor block) during initial phase,
+        // then smooth return of twitches (TOF 1/4 at ~5-6 min, TOF 2/4 at ~7-8 min, TOF 3-4/4 at ~9-10 min)
+        intensity = 1.0 / (1.0 + Math.pow(decayFraction / 0.55, 3.5));
+      } else if (key === 'remifentanil') {
+        // Remifentanil: Ultra-rapid non-specific blood/tissue esterase hydrolysis
+        intensity = Math.max(0.01, Math.exp(-3.8 * decayFraction));
+      } else if (drug.category === 'Induction & Hypnotics') {
+        // Bolus hypnotics (Propofol, Etomidate): rapid alpha redistribution into peripheral compartments
+        intensity = Math.max(0.02, Math.exp(-3.0 * decayFraction));
+      } else if (drug.category === 'Opioids') {
+        // Fentanyl, Sufentanil, Morphine
+        intensity = Math.max(0.04, Math.exp(-1.8 * decayFraction));
+      } else {
+        // Standard decay for vasoactive agents
+        intensity = Math.max(0.02, Math.exp(-2.2 * decayFraction));
+      }
     }
 
     // Keep active drugs until cleared (< 0.03 intensity)
@@ -166,11 +177,11 @@ export function simulatePhysiologyTick(
       else if (key === 'morphine') activeMorphineMg += effectiveDose;
       else if (key === 'midazolam') activeMidazolamMg += effectiveDose;
       else if (key === 'dexmedetomidine') activeDexmedetomidineMcg += effectiveDose;
-      else if (key === 'rocuronium') activeSteroidalRelaxant += (effectiveDose / (patient.weightKg * 0.6));
-      else if (key === 'vecuronium') activeSteroidalRelaxant += (effectiveDose / (patient.weightKg * 0.08));
-      else if (key === 'pancuronium') activeSteroidalRelaxant += (effectiveDose / (patient.weightKg * 0.10));
-      else if (key === 'cisatracurium') activeIsoquinolineRelaxant += (effectiveDose / (patient.weightKg * 0.15));
-      else if (key === 'atracurium') activeIsoquinolineRelaxant += (effectiveDose / (patient.weightKg * 0.45));
+      else if (key === 'rocuronium') activeSteroidalRelaxant += (effectiveDose / (patient.weightKg * 0.35));
+      else if (key === 'vecuronium') activeSteroidalRelaxant += (effectiveDose / (patient.weightKg * 0.05));
+      else if (key === 'pancuronium') activeSteroidalRelaxant += (effectiveDose / (patient.weightKg * 0.06));
+      else if (key === 'cisatracurium') activeIsoquinolineRelaxant += (effectiveDose / (patient.weightKg * 0.08));
+      else if (key === 'atracurium') activeIsoquinolineRelaxant += (effectiveDose / (patient.weightKg * 0.25));
       else if (key === 'succinylcholine') activeDepolarizingRelaxant += (effectiveDose / (patient.weightKg * 1.0));
       else if (key.includes('lidocaine')) activeLidocaineMg += effectiveDose;
       else if (key.includes('bupivacaine')) activeBupivacaineMg += effectiveDose;
@@ -303,30 +314,35 @@ export function simulatePhysiologyTick(
   // =========================================================================
   // 5. MUSCLE TONE & NEUROMUSCULAR PARALYSIS
   // =========================================================================
-  if (activeRelaxantIntensity >= 0.7) {
+  if (activeRelaxantIntensity >= 0.60) {
     p.muscleTone = 'flaccid';
     p.muscleTonePercent = 0;
     p.tofCount = 0;
+    p.trainOfFour = 0;
     p.tofRatio = 0;
-  } else if (activeRelaxantIntensity >= 0.4) {
+  } else if (activeRelaxantIntensity >= 0.38) {
     p.muscleTone = 'relaxed';
     p.muscleTonePercent = 15;
     p.tofCount = 1;
+    p.trainOfFour = 1;
     p.tofRatio = 0.15;
-  } else if (activeRelaxantIntensity >= 0.2) {
+  } else if (activeRelaxantIntensity >= 0.18) {
     p.muscleTone = 'relaxed';
     p.muscleTonePercent = 40;
     p.tofCount = 2;
+    p.trainOfFour = 2;
     p.tofRatio = 0.4;
-  } else if (activeRelaxantIntensity >= 0.08) {
+  } else if (activeRelaxantIntensity >= 0.07) {
     p.muscleTone = 'normal';
     p.muscleTonePercent = 70;
     p.tofCount = 3;
+    p.trainOfFour = 3;
     p.tofRatio = 0.65;
   } else {
     p.muscleTone = 'normal';
     p.muscleTonePercent = 100;
     p.tofCount = 4;
+    p.trainOfFour = 4;
     p.tofRatio = 0.95;
   }
 
@@ -459,8 +475,9 @@ export function simulatePhysiologyTick(
 
     v.liveDeliveredVt = deliveredVt;
     v.liveMinuteVolume = Number(minuteVolLpm.toFixed(1));
-    v.livePip = Math.round(v.peep + (deliveredVt / Math.max(10, p.lungComplianceMlCmH2o)) + 4);
-    v.livePplat = Math.round(v.peep + (deliveredVt / Math.max(10, p.lungComplianceMlCmH2o)));
+    const chestWallResistance = (p.muscleTonePercent > 25) ? Math.round((p.muscleTonePercent - 25) * 0.10) : 0;
+    v.livePip = Math.round(v.peep + (deliveredVt / Math.max(10, p.lungComplianceMlCmH2o)) + 4 + chestWallResistance);
+    v.livePplat = Math.round(v.peep + (deliveredVt / Math.max(10, p.lungComplianceMlCmH2o)) + Math.round(chestWallResistance * 0.5));
 
     if (v.liveFio2 < 21) {
       // Hypoxic gas delivery!

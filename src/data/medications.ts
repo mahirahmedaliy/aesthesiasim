@@ -294,7 +294,7 @@ export const SIMULATOR_DRUGS: SimulatorDrug[] = [
     defaultRoute: 'IV Bolus',
     onsetSec: 30,
     peakSec: 60,
-    durationSec: 480,
+    durationSec: 270,
     description: 'GABA-A agonist. Rapid induction. Causes dose-dependent vasodilation, drop in SVR, myocardial depression, and apnea.',
     patientWarning: (p) => {
       if (p.age >= 65 || p.asaClass.includes('III') || p.asaClass.includes('IV')) {
@@ -503,7 +503,7 @@ export const SIMULATOR_DRUGS: SimulatorDrug[] = [
     defaultRoute: 'IV Bolus',
     onsetSec: 25,
     peakSec: 45,
-    durationSec: 420,
+    durationSec: 270,
     description: 'Imidazoline derivative GABA-A agonist. Outstanding cardiovascular stability with minimal change in MAP, HR, or cardiac output. Causes transient adrenal steroidogenesis suppression.',
     patientWarning: (p) => {
       if (p.history.toLowerCase().includes('septic') || p.keyComorbidities.some(c => c.toLowerCase().includes('adrenal'))) {
@@ -574,7 +574,7 @@ export const SIMULATOR_DRUGS: SimulatorDrug[] = [
     defaultRoute: 'IV Bolus',
     onsetSec: 25,
     peakSec: 45,
-    durationSec: 420,
+    durationSec: 270,
     description: 'Oxybarbiturate hypnotic. Lowers seizure threshold (ideal for ECT), rapid hepatic clearance. Apnea, moderate vasodilation.',
     applyEffect: (phys, dose, p) => {
       const mgPerKg = dose / p.weightKg;
@@ -846,10 +846,10 @@ export const SIMULATOR_DRUGS: SimulatorDrug[] = [
     quickDoses: [50, 80, 100, 140],
     routes: ['IV Bolus', 'IM'],
     defaultRoute: 'IV Bolus',
-    onsetSec: 45,
-    peakSec: 75,
-    durationSec: 480,
-    description: 'Depolarizing neuromuscular blocker. Ultra-rapid onset (~45s) and short duration (~6-10 min, plasma butyrylcholinesterase metabolism). Causes generalized fasciculations, ↑K+ by 0.5-1.0 mEq/L, and triggers Malignant Hyperthermia.',
+    onsetSec: 35,
+    peakSec: 60,
+    durationSec: 240,
+    description: 'Depolarizing neuromuscular blocker. Ultra-rapid onset (~35-45s) and ultra-short duration (~3-5 min, plasma butyrylcholinesterase metabolism). Strictly for intubation; CANNOT be used to maintain surgical relaxation. Causes generalized fasciculations, ↑K+ by 0.5-1.0 mEq/L, and triggers Malignant Hyperthermia.',
     patientWarning: (p) => {
       if (p.baselineLabs && p.baselineLabs.k >= 5.0) {
         return 'CONTRAINDICATION: Pre-existing hyperkalemia (K >= 5.0). Succinylcholine raises serum potassium by 0.5-1.0 mEq/L and can induce fatal ventricular fibrillation / asystole!';
@@ -920,21 +920,22 @@ export const SIMULATOR_DRUGS: SimulatorDrug[] = [
     unit: 'mg',
     mgPerKgMin: 0.6,
     mgPerKgMax: 1.2,
-    quickDoses: [30, 50, 70, 100, 120],
+    quickDoses: [10, 15, 30, 50, 70, 100],
     routes: ['IV Bolus'],
     defaultRoute: 'IV Bolus',
     onsetSec: 60,
-    peakSec: 120,
-    durationSec: 2400,
-    description: 'Non-depolarizing steroidal neuromuscular blocker. Rapid onset (60-90s at 0.6 mg/kg; 60s at RSI dose 1.2 mg/kg). Intermediate duration (~35-50 min). Easily and rapidly reversed with Sugammadex.',
+    peakSec: 100,
+    durationSec: 540,
+    description: 'Non-depolarizing steroidal neuromuscular blocker. Rapid onset (60-90s at 0.6 mg/kg; 60s at RSI dose 1.2 mg/kg). Intermediate clinical duration (reversal/redosing window at 6-8 min, full recovery 9-10 min). Reversible with Sugammadex or Neostigmine.',
     applyEffect: (phys, dose, p, route, activeDrugs) => {
       const priorRoc = getActiveDrugDose(activeDrugs, 'rocuronium');
+      const isRedose = priorRoc > 2 || phys.airwayDevice === 'ett';
       const totalRoc = priorRoc + dose;
       const totalMgPerKg = totalRoc / p.weightKg;
 
-      if (totalMgPerKg < 0.35) {
+      if (!isRedose && totalMgPerKg < 0.40) {
         return {
-          narrative: `Rocuronium ${dose}mg IV administered (Total active: ${Math.round(totalRoc)}mg, ${totalMgPerKg.toFixed(2)} mg/kg). Priming/partial neuromuscular block achieved (TOF 3/4). Vocal cords remain active.`,
+          narrative: `Rocuronium ${dose}mg IV administered (${totalMgPerKg.toFixed(2)} mg/kg). Subtherapeutic / priming dose (TOF 3/4). Inadequate relaxation for intubation alone.`,
           vitalsChanges: {
             muscleTone: 'relaxed',
             muscleTonePercent: 65,
@@ -946,8 +947,8 @@ export const SIMULATOR_DRUGS: SimulatorDrug[] = [
       }
 
       return {
-        narrative: priorRoc > 5
-          ? `Rocuronium ${dose}mg IV added (Total cumulative active: ${Math.round(totalRoc)}mg, ${totalMgPerKg.toFixed(2)} mg/kg). Complete flaccid neuromuscular paralysis in 60 seconds (TOF 0/4 twitches). Optimal intubation conditions established.`
+        narrative: isRedose
+          ? `Rocuronium ${dose}mg IV maintenance redose administered (Total active: ${Math.round(totalRoc)}mg). Surgical muscle relaxation deepened back to complete flaccidity (TOF 0/4 twitches).`
           : `Rocuronium ${dose}mg IV administered (${totalMgPerKg.toFixed(2)} mg/kg). Complete flaccid neuromuscular paralysis in 60-75 seconds. Train-of-Four 0/4 twitches. Optimal intubation conditions established.`,
         vitalsChanges: {
           muscleTone: 'flaccid',
@@ -967,19 +968,20 @@ export const SIMULATOR_DRUGS: SimulatorDrug[] = [
     unit: 'mg',
     mgPerKgMin: 0.08,
     mgPerKgMax: 0.12,
-    quickDoses: [4, 6, 8, 10],
+    quickDoses: [2, 4, 6, 8, 10],
     routes: ['IV Bolus'],
     defaultRoute: 'IV Bolus',
-    onsetSec: 120,
-    peakSec: 180,
-    durationSec: 2400,
-    description: 'Intermediate non-depolarizing steroidal NMBA. Devoid of cardiovascular side effects (no tachycardia or histamine release). Hepatic and renal clearance.',
+    onsetSec: 90,
+    peakSec: 150,
+    durationSec: 540,
+    description: 'Intermediate non-depolarizing steroidal NMBA. Devoid of cardiovascular side effects (no tachycardia or histamine release). Hepatic and renal clearance. Reversible with Sugammadex or Neostigmine.',
     applyEffect: (phys, dose, p, route, activeDrugs) => {
       const priorVec = getActiveDrugDose(activeDrugs, 'vecuronium');
+      const isRedose = priorVec > 0.5 || phys.airwayDevice === 'ett';
       const totalVec = priorVec + dose;
       const totalMgPerKg = totalVec / p.weightKg;
 
-      if (totalMgPerKg < 0.06) {
+      if (!isRedose && totalMgPerKg < 0.06) {
         return {
           narrative: `Vecuronium ${dose}mg IV given (Total active: ${totalVec.toFixed(1)}mg, ${totalMgPerKg.toFixed(3)} mg/kg). Partial block (TOF 2/4). Inadequate relaxation for intubation alone.`,
           vitalsChanges: {
@@ -993,8 +995,8 @@ export const SIMULATOR_DRUGS: SimulatorDrug[] = [
       }
 
       return {
-        narrative: priorVec > 1
-          ? `Vecuronium ${dose}mg IV added (Total cumulative active: ${totalVec.toFixed(1)}mg, ${totalMgPerKg.toFixed(2)} mg/kg). Complete motor flaccidity established with excellent hemodynamic stability. TOF 0/4 twitches.`
+        narrative: isRedose
+          ? `Vecuronium ${dose}mg IV maintenance redose administered (Total active: ${totalVec.toFixed(1)}mg). Complete motor flaccidity maintained (TOF 0/4 twitches).`
           : `Vecuronium ${dose}mg IV given (${totalMgPerKg.toFixed(2)} mg/kg). Complete motor relaxation in 2.5 minutes with perfect hemodynamic stability. TOF 0/4.`,
         vitalsChanges: {
           muscleTone: 'flaccid',
@@ -1014,19 +1016,20 @@ export const SIMULATOR_DRUGS: SimulatorDrug[] = [
     unit: 'mg',
     mgPerKgMin: 0.15,
     mgPerKgMax: 0.2,
-    quickDoses: [8, 10, 14, 18],
+    quickDoses: [2, 4, 8, 10, 14, 18],
     routes: ['IV Bolus', 'IV Infusion'],
     defaultRoute: 'IV Bolus',
-    onsetSec: 150,
-    peakSec: 240,
-    durationSec: 2700,
-    description: 'Benzylisoquinolinium NMBA. Undergoes organ-independent Hofmann elimination (pH and temperature dependent). Zero histamine release. Ideal for patients with severe renal or liver failure.',
+    onsetSec: 120,
+    peakSec: 180,
+    durationSec: 600,
+    description: 'Benzylisoquinolinium NMBA. Undergoes organ-independent Hofmann elimination (pH and temperature dependent). Zero histamine release. Ideal for patients with severe renal or liver failure. Reversible with Neostigmine (NOT Sugammadex).',
     applyEffect: (phys, dose, p, route, activeDrugs) => {
       const priorCis = getActiveDrugDose(activeDrugs, 'cisatracurium');
+      const isRedose = priorCis > 1.0 || phys.airwayDevice === 'ett';
       const totalCis = priorCis + dose;
       const totalMgPerKg = totalCis / p.weightKg;
 
-      if (totalMgPerKg < 0.08) {
+      if (!isRedose && totalMgPerKg < 0.10) {
         return {
           narrative: `Cisatracurium ${dose}mg IV given (Total active: ${totalCis.toFixed(1)}mg, ${totalMgPerKg.toFixed(3)} mg/kg). Partial block (TOF 2/4).`,
           vitalsChanges: {
@@ -1040,8 +1043,8 @@ export const SIMULATOR_DRUGS: SimulatorDrug[] = [
       }
 
       return {
-        narrative: priorCis > 2
-          ? `Cisatracurium ${dose}mg IV added (Total cumulative active: ${totalCis.toFixed(1)}mg, ${totalMgPerKg.toFixed(2)} mg/kg). Complete neuromuscular flaccidity achieved. TOF 0/4 twitches.`
+        narrative: isRedose
+          ? `Cisatracurium ${dose}mg IV maintenance redose administered (Total active: ${totalCis.toFixed(1)}mg). Surgical relaxation restored to flaccidity (TOF 0/4 twitches).`
           : `Cisatracurium ${dose}mg IV given (${totalMgPerKg.toFixed(2)} mg/kg). Spontaneous Hofmann degradation in plasma ensures predictable duration even in renal failure. Flaccidity achieved. TOF 0/4.`,
         vitalsChanges: {
           muscleTone: 'flaccid',
@@ -1061,12 +1064,12 @@ export const SIMULATOR_DRUGS: SimulatorDrug[] = [
     unit: 'mg',
     mgPerKgMin: 0.4,
     mgPerKgMax: 0.5,
-    quickDoses: [20, 30, 40, 50],
+    quickDoses: [10, 20, 30, 40, 50],
     routes: ['IV Bolus'],
     defaultRoute: 'IV Bolus',
-    onsetSec: 120,
-    peakSec: 180,
-    durationSec: 2400,
+    onsetSec: 90,
+    peakSec: 150,
+    durationSec: 540,
     description: 'Benzylisoquinolinium NMBA cleared by ester hydrolysis and Hofmann elimination. Rapid bolus injection may cause histamine release (flushing, transient hypotension; in pheochromocytoma precipitates catecholamine release).',
     patientWarning: (p) => {
       if (p.procedure.toLowerCase().includes('adrenal') || p.keyComorbidities.some(c => c.toLowerCase().includes('pheo'))) {
@@ -1116,9 +1119,9 @@ export const SIMULATOR_DRUGS: SimulatorDrug[] = [
     quickDoses: [4, 6, 8],
     routes: ['IV Bolus'],
     defaultRoute: 'IV Bolus',
-    onsetSec: 180,
-    peakSec: 300,
-    durationSec: 5400,
+    onsetSec: 120,
+    peakSec: 180,
+    durationSec: 900,
     description: 'Long-acting aminosteroid neuromuscular blocker. Possesses cardiac muscarinic (M2) vagolytic and sympathetic noradrenaline-reuptake-blocking properties. CONTRAINDICATED in pheochromocytoma (causes severe tachycardia and hypertension).',
     patientWarning: (p) => {
       if (p.procedure.toLowerCase().includes('adrenal') || p.keyComorbidities.some(c => c.toLowerCase().includes('pheo'))) {
